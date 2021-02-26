@@ -11,7 +11,7 @@ import (
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/rbcervilla/redisstore/v8"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/runtime/protoiface"
 )
 
 // Modifier defines a store to save session
@@ -29,6 +29,11 @@ type Session struct {
 	CSRFToken []byte
 	// User role
 	Role string
+}
+
+// NewModifier returns a gateway input/output modifier
+func NewModifier(store *redisstore.RedisStore, config *manager.Config) *Modifier {
+	return &Modifier{store, config}
 }
 
 // MetadataAnnotator looks up session and passes session data and jwt token to gRPC method
@@ -57,9 +62,9 @@ func (m *Modifier) MetadataAnnotator(_ context.Context, r *http.Request) metadat
 	return metadata.Pairs()
 }
 
-// Modifier checks whether the gRPC method called has requested for changing the response
+// ResponseModifier checks whether the gRPC method called has requested for changing the response
 // before the http response is sent
-func (m *Modifier) Modifier(ctx context.Context, w http.ResponseWriter, resp proto.Message) error {
+func (m *Modifier) ResponseModifier(ctx context.Context, w http.ResponseWriter, resp protoiface.MessageV1) error {
 	md, ok := runtime.ServerMetadataFromContext(ctx)
 	if !ok {
 		return nil
