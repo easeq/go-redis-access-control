@@ -10,8 +10,8 @@ import (
 
 // JWT is a JSON web token manager
 type JWT struct {
-	secretKey string        `env:"GRAL_JWT_SECRET_KEY"`
-	duration  time.Duration `env:"GRAL_JWT_DURATION"`
+	SecretKey string        `env:"GRAC_JWT_SECRET_KEY"`
+	Duration  time.Duration `env:"GRAC_JWT_DURATION"`
 }
 
 // Claims defines the custom JWT claims
@@ -29,7 +29,7 @@ func NewJWTManager(secretKey string, tokenDuration time.Duration) *JWT {
 
 // GetSecretKey returns secret key to sign jwt
 func (jwt *JWT) GetSecretKey() []byte {
-	return []byte(jwt.secretKey)
+	return []byte(jwt.SecretKey)
 }
 
 // Generate generates and signs a new token with specified claims for a user
@@ -39,7 +39,7 @@ func (jwt *JWT) Generate(ID int, role string, randToken string) (string, error) 
 		Role:        role,
 		RandomToken: randToken,
 		StandardClaims: jwtGo.StandardClaims{
-			ExpiresAt: time.Now().Add(jwt.duration).Unix(),
+			ExpiresAt: time.Now().Add(jwt.Duration).Unix(),
 		},
 	}
 

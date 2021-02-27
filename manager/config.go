@@ -1,7 +1,7 @@
 package manager
 
 import (
-	"log"
+	"fmt"
 
 	"github.com/Netflix/go-env"
 )
@@ -13,12 +13,12 @@ type Config struct {
 }
 
 // NewConfig returns a loaded module config
-func NewConfig() *Config {
+func NewConfig() (*Config, error) {
 	var config Config
 	_, err := env.UnmarshalFromEnviron(&config)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("GRAC config load error: %v", err)
 	}
 
-	return &config
+	return &config, nil
 }

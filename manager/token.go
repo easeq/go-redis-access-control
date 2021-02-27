@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"math/big"
 )
 
 func init() {
@@ -16,6 +15,31 @@ func init() {
 	if err != nil {
 		panic(fmt.Sprintf("crypto/rand is unavailable: Read() failed with %#v", err))
 	}
+}
+
+// Token struct hold the token
+type Token struct {
+	token []byte
+}
+
+// NewToken creates a new token
+func NewToken(n int) (*Token, error) {
+	token, err := GenerateRandomBytes(n)
+	if err != nil {
+		return nil, fmt.Errorf("Token generation error: %v", err)
+	}
+	return &Token{token}, nil
+}
+
+// ToURLSafeString returns a base64 encoded URL safe random string
+func (t *Token) ToURLSafeString() string {
+	return base64.URLEncoding.EncodeToString(t.token)
+}
+
+// ToString converts and returns the string representation
+// of the generated token
+func (t *Token) ToString() string {
+	return string(t.token)
 }
 
 // GenerateRandomBytes returns securely generated random bytes.
@@ -31,32 +55,4 @@ func GenerateRandomBytes(n int) ([]byte, error) {
 	}
 
 	return b, nil
-}
-
-// GenerateRandomString returns a securely generated random string.
-// It will return an error if the system's secure random
-// number generator fails to function correctly, in which
-// case the caller should not continue.
-func GenerateRandomString(n int) (string, error) {
-	const letters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-"
-	ret := make([]byte, n)
-	for i := 0; i < n; i++ {
-		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(letters))))
-		if err != nil {
-			return "", err
-		}
-		ret[i] = letters[num.Int64()]
-	}
-
-	return string(ret), nil
-}
-
-// GenerateRandomStringURLSafe returns a URL-safe, base64 encoded
-// securely generated random string.
-// It will return an error if the system's secure random
-// number generator fails to function correctly, in which
-// case the caller should not continue.
-func GenerateRandomStringURLSafe(n int) (string, error) {
-	b, err := GenerateRandomBytes(n)
-	return base64.URLEncoding.EncodeToString(b), err
 }

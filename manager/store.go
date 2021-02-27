@@ -9,10 +9,10 @@ import (
 
 // Redis config
 type Redis struct {
-	Address          string `env:"GRAL_REDIS_ADDRESS"`
-	DefaultSessionID string `env:"GRAL_DEFAULT_SESSION_ID"`
-	SessionTimeout   int    `env:"GRAL_SESSION_TIMEOUT"`
-	CSRFTokenLength  int    `env:"GRAL_CSRF_TOKEN_LENGTH"`
+	Address          string `env:"GRAC_REDIS_ADDRESS"`
+	DefaultSessionID string `env:"GRAC_DEFAULT_SESSION_ID"`
+	SessionTimeout   int    `env:"GRAC_SESSION_TIMEOUT"`
+	CSRFTokenLength  int    `env:"GRAC_CSRF_TOKEN_LENGTH"`
 }
 
 // NewRedisClient creates a new redis client

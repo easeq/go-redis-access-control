@@ -26,7 +26,7 @@ type Session struct {
 	// User ID
 	UserID int
 	// CSRF token for the session
-	CSRFToken []byte
+	CSRFToken *manager.Token
 	// User role
 	Role string
 }
@@ -47,7 +47,7 @@ func (m *Modifier) MetadataAnnotator(_ context.Context, r *http.Request) metadat
 	if sessionDataValue, ok := session.Values["data"]; ok {
 		sessionData := sessionDataValue.(*Session)
 		// Generate JWT
-		jwt, err := m.config.JWT.Generate(sessionData.UserID, sessionData.Role, string(sessionData.CSRFToken))
+		jwt, err := m.config.JWT.Generate(sessionData.UserID, sessionData.Role, sessionData.CSRFToken.ToString())
 		if err != nil {
 			return metadata.Pairs()
 		}
@@ -105,7 +105,7 @@ func (m *Modifier) prepareSession(req *http.Request, userID int, role string, de
 	session.Options.MaxAge = getSessionTimeout(deleteSession, m.config.Redis.SessionTimeout)
 	session.Options.Path = "/"
 
-	csrfToken, err := manager.GenerateRandomBytes(m.config.Redis.CSRFTokenLength)
+	csrfToken, err := manager.NewToken(m.config.Redis.CSRFTokenLength)
 	if err != nil {
 		return nil, err
 	}
