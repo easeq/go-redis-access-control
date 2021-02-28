@@ -136,22 +136,22 @@ func getRequestFromContext(ctx context.Context) *http.Request {
 
 // getUserID returns the current session user ID
 func getUserID(md runtime.ServerMetadata) (int, error) {
-	gralUserID, err := metadataByKey(md, "gral-session-user-id")
-	if err != nil {
-		return 0, err
+	userID, _ := metadataByKey(md, "grac-session-user-id")
+	if userID == "" {
+		return 0, nil
 	}
 
-	return strconv.Atoi(gralUserID)
+	return strconv.Atoi(userID)
 }
 
 // getUserRole returns the current session user role
 func getUserRole(md runtime.ServerMetadata) (string, error) {
-	return metadataByKey(md, "gral-session-user-role")
+	return metadataByKey(md, "grac-session-user-role")
 }
 
 // isDeleteSession returns whether to delete the existing session or not
 func isDeleteSession(md runtime.ServerMetadata) (bool, error) {
-	gralIsDelete, err := metadataByKey(md, "gral-is-delete-session")
+	gralIsDelete, err := metadataByKey(md, "grac-is-delete-session")
 	if err != nil {
 		return false, err
 	}

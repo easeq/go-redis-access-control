@@ -13,18 +13,12 @@ import (
 
 // AuthInterceptor is a grpc interceptor for authentication and authorization
 type AuthInterceptor struct {
-	jwtManager      *manager.JWT
-	accessibleRoles map[string]map[string]bool
-	guestRole       string
+	jwtManager *manager.JWT
 }
 
 // NewAuthInterceptor returns a new auth interceptor
-func NewAuthInterceptor(
-	jwtManager *manager.JWT,
-	accessibleRoles map[string]map[string]bool,
-	guestRole string,
-) *AuthInterceptor {
-	return &AuthInterceptor{jwtManager, accessibleRoles, guestRole}
+func NewAuthInterceptor(jwtManager *manager.JWT) *AuthInterceptor {
+	return &AuthInterceptor{jwtManager}
 }
 
 // Unary returns a server interceptor function to authenticate and authorize unary RPC
@@ -61,19 +55,17 @@ func (interceptor *AuthInterceptor) Stream() grpc.StreamServerInterceptor {
 	}
 }
 
-// isRoleValid returns whether the role can access the current method
-func (interceptor *AuthInterceptor) isRoleValid(method string, role string) bool {
-	return interceptor.accessibleRoles[method][role] ||
-		interceptor.accessibleRoles[method][interceptor.guestRole]
-}
-
 // matchCsrfToken returns whether the current token is valid
 func (interceptor *AuthInterceptor) matchCsrfToken(requestToken string, claimsToken string) bool {
 	return requestToken == claimsToken
 }
 
 // Authorize access to user
-func (interceptor *AuthInterceptor) authorize(ctx context.Context, method string) error {
+func (interceptor *AuthInterceptor) authorize(ctx context.Context, endpoint string) error {
+	if manager.Endpoint(endpoint).CanAccessWithoutAuth() == true {
+		return nil
+	}
+
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return status.Errorf(codes.Unauthenticated, "missing required data")
@@ -89,7 +81,7 @@ func (interceptor *AuthInterceptor) authorize(ctx context.Context, method string
 		return status.Errorf(codes.Unauthenticated, "access token is invalid: %v", err)
 	}
 
-	if !interceptor.isRoleValid(method, claims.Role) {
+	if manager.Endpoint(endpoint).CanAccessWithRole(claims.Role) == false {
 		return status.Errorf(codes.PermissionDenied, "access denied!")
 	}
 

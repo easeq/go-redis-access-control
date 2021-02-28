@@ -1,7 +1,7 @@
 package manager
 
 import (
-	"fmt"
+	"strings"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
@@ -49,14 +49,27 @@ func (jwt *JWT) Generate(ID int, role string, randToken string) (string, error) 
 
 // Verify verifies the access token string and return a user claim if the token is valid
 func (jwt *JWT) Verify(tokenStr string) (*Claims, error) {
+	tokenStr, err := stripBearerPrefixFromTokenString(tokenStr)
+	if err != nil {
+		return nil, err
+	}
+
 	claims := &Claims{}
 	token, err := jwtGo.ParseWithClaims(tokenStr, claims, func(token *jwtGo.Token) (interface{}, error) {
 		return jwt.GetSecretKey(), nil
 	})
 
 	if err != nil || !token.Valid {
-		return nil, fmt.Errorf("Invalid token: %w", err)
+		return nil, err
 	}
 
 	return claims, nil
+}
+
+// Strips 'Bearer ' prefix from bearer token string
+func stripBearerPrefixFromTokenString(token string) (string, error) {
+	if len(token) > 6 && strings.ToUpper(token[0:7]) == "BEARER " {
+		return token[7:], nil
+	}
+	return token, nil
 }
