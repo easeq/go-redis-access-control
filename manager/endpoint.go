@@ -19,6 +19,9 @@ type Endpoint string
 // Endpoints map of Endpoint and it's config
 type Endpoints map[Endpoint]Action
 
+// RoleAll that any authenticated user can access
+const RoleAll = "all"
+
 var (
 	// ErrInvalidEndpoint returned when accessing an invalid endpoint
 	ErrInvalidEndpoint = errors.New("accessing invalid endpoint")
@@ -49,7 +52,7 @@ func (e Endpoint) CanAccessWithRole(role string) bool {
 		return false
 	}
 
-	return action.Roles[role]
+	return role == RoleAll || action.Roles[role]
 }
 
 // CanAccessWithoutAuth checks if the endpoint can be accessed without authentication
