@@ -3,7 +3,9 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"log"
 
+	"github.com/easeq/go-redis-access-control/gateway"
 	"github.com/easeq/go-redis-access-control/manager"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -55,23 +57,18 @@ func (interceptor *AuthInterceptor) Stream() grpc.StreamServerInterceptor {
 	}
 }
 
-// matchCsrfToken returns whether the current token is valid
-func (interceptor *AuthInterceptor) matchCsrfToken(requestToken string, claimsToken string) bool {
-	return requestToken == claimsToken
-}
-
 // Authorize access to user
 func (interceptor *AuthInterceptor) authorize(ctx context.Context, endpoint string) error {
 	if manager.Endpoint(endpoint).CanAccessWithoutAuth() == true {
 		return nil
 	}
 
-	md, ok := metadata.FromIncomingContext(ctx)
+	md, ok := getMetaDataFromContext(ctx)
 	if !ok {
 		return status.Errorf(codes.Unauthenticated, "missing required data")
 	}
 
-	accessToken, err := MetadataByKey(md, "authorization")
+	accessToken, err := MetadataByKey(md, gateway.KeyAuthorization)
 	if err != nil {
 		return status.Errorf(codes.Unauthenticated, "access token is required")
 	}
@@ -86,11 +83,18 @@ func (interceptor *AuthInterceptor) authorize(ctx context.Context, endpoint stri
 	}
 
 	csrfToken, _ := MetadataByKey(md, "X-XSRF-TOKEN")
-	if interceptor.matchCsrfToken(csrfToken, claims.RandomToken) {
+	if !claims.RandomToken.Compare(csrfToken) {
 		return status.Error(codes.PermissionDenied, "access denied!")
 	}
 
 	return nil
+}
+
+// SetSessionData sets the data to be stored in the session store.
+// The values are passed as a map of (string) key => (string) value
+func SetSessionData(ctx context.Context, kv ...string) {
+	header := metadata.Pairs(kv...)
+	grpc.SendHeader(ctx, header)
 }
 
 // MetadataByKey returns the value of the first metadata with the provided key
@@ -101,4 +105,21 @@ func MetadataByKey(md metadata.MD, key string) (string, error) {
 	}
 
 	return values[0], nil
+}
+
+func getMetaDataFromContext(ctx context.Context) (metadata.MD, bool) {
+	return metadata.FromIncomingContext(ctx)
+}
+
+// GetCurrentUserID returns the current user's ID
+func GetCurrentUserID(ctx context.Context) (string, error) {
+	md, _ := getMetaDataFromContext(ctx)
+	log.Print(md)
+	return MetadataByKey(md, gateway.KeyUserID)
+}
+
+// GetCurrentUserRole returns the current user's role
+func GetCurrentUserRole(ctx context.Context) (string, error) {
+	md, _ := getMetaDataFromContext(ctx)
+	return MetadataByKey(md, gateway.KeyUserRole)
 }

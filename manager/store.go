@@ -11,7 +11,9 @@ import (
 type Redis struct {
 	Address          string `env:"GRAC_REDIS_ADDRESS"`
 	DefaultSessionID string `env:"GRAC_DEFAULT_SESSION_ID"`
+	SessionDomain    string `env:"GRAC_SESSION_DOMAIN"`
 	SessionTimeout   int    `env:"GRAC_SESSION_TIMEOUT"`
+	SecureCookie     bool   `env:"GRAC_SECURE_COOKIE"`
 	CSRFTokenLength  int    `env:"GRAC_CSRF_TOKEN_LENGTH"`
 }
 

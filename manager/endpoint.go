@@ -52,7 +52,7 @@ func (e Endpoint) CanAccessWithRole(role string) bool {
 		return false
 	}
 
-	return role == RoleAll || action.Roles[role]
+	return action.Roles[RoleAll] == true || action.Roles[role]
 }
 
 // CanAccessWithoutAuth checks if the endpoint can be accessed without authentication

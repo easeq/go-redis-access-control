@@ -19,7 +19,7 @@ func init() {
 
 // Token struct hold the token
 type Token struct {
-	token []byte
+	Value []byte
 }
 
 // NewToken creates a new token
@@ -33,13 +33,18 @@ func NewToken(n int) (*Token, error) {
 
 // ToURLSafeString returns a base64 encoded URL safe random string
 func (t *Token) ToURLSafeString() string {
-	return base64.URLEncoding.EncodeToString(t.token)
+	return base64.URLEncoding.EncodeToString(t.Value)
 }
 
 // ToString converts and returns the string representation
 // of the generated token
 func (t *Token) ToString() string {
-	return string(t.token)
+	return string(t.Value)
+}
+
+// Compare compares this token with another token
+func (t *Token) Compare(anotherToken string) bool {
+	return t.ToURLSafeString() == anotherToken
 }
 
 // GenerateRandomBytes returns securely generated random bytes.

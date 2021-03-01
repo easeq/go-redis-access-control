@@ -2,7 +2,9 @@ package gateway
 
 import (
 	"context"
+	"encoding/gob"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -31,31 +33,56 @@ type Session struct {
 	Role string
 }
 
+const (
+	// KeyUserID is identifier to get the current user's ID from the session store
+	KeyUserID = "Grac-Session-User-Id"
+	// KeyUserRole is the identifier to get the current user's role from the session store
+	KeyUserRole = "Grac-Session-User-Role"
+	// KeyDeleteSession is the identifier to check whether the session should be deleted
+	KeyDeleteSession = "Grac-Is-Delete-Session"
+	// KeyAuthorization is the key to look for the authorization header
+	KeyAuthorization = "authorization"
+	// KeyUserCSRFToken is the identifier for csrf token
+	KeyUserCSRFToken = "X-Xsrf-Token"
+	// ErrFailedTokenGeneration is to show when the token generation fails
+	ErrFailedTokenGeneration = "GRAC Error: Failed to generate access token"
+)
+
+func init() {
+	gob.Register(&Session{})
+}
+
 // NewModifier returns a gateway input/output modifier
 func NewModifier(store *redisstore.RedisStore, config *manager.Config) *Modifier {
 	return &Modifier{store, config}
 }
 
 // MetadataAnnotator looks up session and passes session data and jwt token to gRPC method
-func (m *Modifier) MetadataAnnotator(_ context.Context, r *http.Request) metadata.MD {
+func (m *Modifier) MetadataAnnotator(ctx context.Context, r *http.Request) metadata.MD {
 	session, err := m.store.Get(r, m.config.Redis.DefaultSessionID)
 	if err != nil {
 		// Session doesn't exist, hence no metadata to pass to gRPC method
 		return metadata.Pairs()
 	}
 
-	if sessionDataValue, ok := session.Values["data"]; ok {
+	sessionDataValue, ok := session.Values["data"]
+	if ok {
 		sessionData := sessionDataValue.(*Session)
+
 		// Generate JWT
-		jwt, err := m.config.JWT.Generate(sessionData.UserID, sessionData.Role, sessionData.CSRFToken.ToString())
+		jwt, err := m.config.JWT.Generate(sessionData.UserID, sessionData.Role, sessionData.CSRFToken)
 		if err != nil {
+			log.Println(ErrFailedTokenGeneration)
+			log.Println(err)
 			return metadata.Pairs()
 		}
 
-		// Set user id and jwt (csrf token passed directly from http request)
+		// Set user id, role and jwt (csrf token passed directly from http request)
 		return metadata.Pairs(
-			"userId", strconv.Itoa(sessionData.UserID),
-			"authorization", jwt,
+			KeyUserID, strconv.Itoa(sessionData.UserID),
+			KeyUserRole, sessionData.Role,
+			KeyAuthorization, jwt,
+			KeyUserCSRFToken, r.Header.Get(KeyUserCSRFToken),
 		)
 	}
 
@@ -70,20 +97,9 @@ func (m *Modifier) ResponseModifier(ctx context.Context, w http.ResponseWriter, 
 		return nil
 	}
 
-	userID, err := getUserID(md)
-	if err != nil || userID == 0 {
-		return err
-	}
-
-	role, err := getUserRole(md)
-	if err != nil || role == "" {
-		return nil
-	}
-
-	deleteSession, err := isDeleteSession(md)
-	if err != nil {
-		return err
-	}
+	deleteSession, _ := isDeleteSession(md)
+	userID, _ := getUserID(md)
+	role, _ := getUserRole(md)
 
 	// Get HTTP request saved in context, and attach session to it
 	request := getRequestFromContext(ctx)
@@ -91,6 +107,16 @@ func (m *Modifier) ResponseModifier(ctx context.Context, w http.ResponseWriter, 
 	if err != nil {
 		return err
 	}
+
+	if sessionDataValue, ok := session.Values["data"]; ok && deleteSession != true {
+		sessionData := sessionDataValue.(*Session)
+		w.Header().Set(KeyUserCSRFToken, sessionData.CSRFToken.ToURLSafeString())
+	}
+
+	delete(w.Header(), "Grpc-Metadata-"+KeyUserID)
+	delete(w.Header(), "Grpc-Metadata-"+KeyUserRole)
+	delete(w.Header(), "Grpc-Metadata-"+KeyDeleteSession)
+	delete(w.Header(), "Grpc-Metadata-"+KeyUserCSRFToken)
 
 	// Save the session
 	return m.store.Save(request, w, session)
@@ -102,21 +128,32 @@ func (m *Modifier) prepareSession(req *http.Request, userID int, role string, de
 		return nil, err
 	}
 
-	session.Options.MaxAge = getSessionTimeout(deleteSession, m.config.Redis.SessionTimeout)
-	session.Options.Path = "/"
+	if session.IsNew == true {
+		session.Options.Domain = m.config.Redis.SessionDomain
+		session.Options.Path = "/"
+		session.Options.SameSite = http.SameSiteLaxMode
+		session.Options.HttpOnly = true
+		session.Options.Secure = m.config.Redis.SecureCookie
 
-	csrfToken, err := manager.NewToken(m.config.Redis.CSRFTokenLength)
-	if err != nil {
-		return nil, err
+		csrfToken, err := manager.NewToken(m.config.Redis.CSRFTokenLength)
+		if err != nil {
+			return nil, err
+		}
+
+		sessionData := &Session{
+			UserID:    userID,
+			CSRFToken: csrfToken,
+			Role:      role,
+		}
+
+		session.Values["data"] = sessionData
 	}
 
-	sessionData := &Session{
-		UserID:    userID,
-		CSRFToken: csrfToken,
-		Role:      role,
-	}
+	session.Options.MaxAge = getSessionTimeout(
+		deleteSession,
+		m.config.Redis.SessionTimeout,
+	)
 
-	session.Values["data"] = sessionData
 	return session, nil
 }
 
@@ -136,9 +173,9 @@ func getRequestFromContext(ctx context.Context) *http.Request {
 
 // getUserID returns the current session user ID
 func getUserID(md runtime.ServerMetadata) (int, error) {
-	userID, _ := metadataByKey(md, "grac-session-user-id")
+	userID, _ := metadataByKey(md, KeyUserID)
 	if userID == "" {
-		return 0, nil
+		return 0, fmt.Errorf("Invalid user")
 	}
 
 	return strconv.Atoi(userID)
@@ -146,17 +183,17 @@ func getUserID(md runtime.ServerMetadata) (int, error) {
 
 // getUserRole returns the current session user role
 func getUserRole(md runtime.ServerMetadata) (string, error) {
-	return metadataByKey(md, "grac-session-user-role")
+	return metadataByKey(md, KeyUserRole)
 }
 
 // isDeleteSession returns whether to delete the existing session or not
 func isDeleteSession(md runtime.ServerMetadata) (bool, error) {
-	gralIsDelete, err := metadataByKey(md, "grac-is-delete-session")
-	if err != nil {
-		return false, err
+	delete, _ := metadataByKey(md, KeyDeleteSession)
+	if delete == "" {
+		return false, nil
 	}
 
-	return strconv.ParseBool(gralIsDelete)
+	return strconv.ParseBool(delete)
 }
 
 // metadataByKey returns the value of the first metadata with the provided key
