@@ -3,7 +3,6 @@ package grpc
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"github.com/easeq/go-redis-access-control/gateway"
 	"github.com/easeq/go-redis-access-control/manager"
@@ -125,7 +124,6 @@ func getMetaDataFromContext(ctx context.Context) (metadata.MD, bool) {
 // GetCurrentUserID returns the current user's ID
 func GetCurrentUserID(ctx context.Context) (string, error) {
 	md, _ := getMetaDataFromContext(ctx)
-	log.Print(md)
 	return MetadataByKey(md, gateway.KeyUserID)
 }
 
