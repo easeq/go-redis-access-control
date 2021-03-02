@@ -113,13 +113,17 @@ func (m *Modifier) ResponseModifier(ctx context.Context, w http.ResponseWriter, 
 		w.Header().Set(KeyUserCSRFToken, sessionData.CSRFToken.ToURLSafeString())
 	}
 
-	delete(w.Header(), "Grpc-Metadata-"+KeyUserID)
-	delete(w.Header(), "Grpc-Metadata-"+KeyUserRole)
-	delete(w.Header(), "Grpc-Metadata-"+KeyDeleteSession)
-	delete(w.Header(), "Grpc-Metadata-"+KeyUserCSRFToken)
+	// Delete gRPC data that should not be passed as headers in the HTTP response
+	deleteGrpcMetadata(w, KeyUserID, KeyUserRole, KeyDeleteSession, KeyUserCSRFToken)
 
 	// Save the session
 	return m.store.Save(request, w, session)
+}
+
+func deleteGrpcMetadata(w http.ResponseWriter, keys ...string) {
+	for _, key := range keys {
+		delete(w.Header(), "Grpc-Metadata-"+key)
+	}
 }
 
 func (m *Modifier) prepareSession(req *http.Request, userID int, role string, deleteSession bool) (*sessions.Session, error) {
