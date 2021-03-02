@@ -13,6 +13,17 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+var (
+	// ErrMissingReqData returns when the certain required data is missing
+	ErrMissingReqData = status.Errorf(codes.Unauthenticated, "Missing required data")
+	// ErrMissingAccessToken returns when access token is missing from the request data
+	ErrMissingAccessToken = status.Errorf(codes.Unauthenticated, "Access token is required")
+	// ErrInvalidAccessToken returns when the access token provided is invalid
+	ErrInvalidAccessToken = status.Errorf(codes.Unauthenticated, "Access token is invalid")
+	// ErrAccessDenied returns when the data provided is not sufficient to provide access to the requested method
+	ErrAccessDenied = status.Errorf(codes.PermissionDenied, "Access denied")
+)
+
 // AuthInterceptor is a grpc interceptor for authentication and authorization
 type AuthInterceptor struct {
 	jwtManager *manager.JWT
@@ -65,26 +76,26 @@ func (interceptor *AuthInterceptor) authorize(ctx context.Context, endpoint stri
 
 	md, ok := getMetaDataFromContext(ctx)
 	if !ok {
-		return status.Errorf(codes.Unauthenticated, "missing required data")
+		return ErrMissingReqData
 	}
 
 	accessToken, err := MetadataByKey(md, gateway.KeyAuthorization)
 	if err != nil {
-		return status.Errorf(codes.Unauthenticated, "access token is required")
+		return ErrMissingAccessToken
 	}
 
 	claims, err := interceptor.jwtManager.Verify(accessToken)
 	if err != nil {
-		return status.Errorf(codes.Unauthenticated, "access token is invalid: %v", err)
+		return ErrInvalidAccessToken
 	}
 
 	if manager.Endpoint(endpoint).CanAccessWithRole(claims.Role) == false {
-		return status.Errorf(codes.PermissionDenied, "access denied!")
+		return ErrAccessDenied
 	}
 
-	csrfToken, _ := MetadataByKey(md, "X-XSRF-TOKEN")
+	csrfToken, _ := MetadataByKey(md, gateway.KeyUserCSRFToken)
 	if !claims.RandomToken.Compare(csrfToken) {
-		return status.Error(codes.PermissionDenied, "access denied!")
+		return ErrAccessDenied
 	}
 
 	return nil
