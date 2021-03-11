@@ -53,8 +53,8 @@ func init() {
 }
 
 // NewModifier returns a gateway input/output modifier
-func NewModifier(store *redisstore.RedisStore, config *manager.Config) *Modifier {
-	return &Modifier{store, config}
+func NewModifier(store *redisstore.RedisStore, config interface{}) *Modifier {
+	return &Modifier{store, config.(*manager.Config)}
 }
 
 // MetadataAnnotator looks up session and passes session data and jwt token to gRPC method
@@ -66,27 +66,26 @@ func (m *Modifier) MetadataAnnotator(ctx context.Context, r *http.Request) metad
 	}
 
 	sessionDataValue, ok := session.Values["data"]
-	if ok {
-		sessionData := sessionDataValue.(*Session)
-
-		// Generate JWT
-		jwt, err := m.config.JWT.Generate(sessionData.UserID, sessionData.Role, sessionData.CSRFToken)
-		if err != nil {
-			log.Println(ErrFailedTokenGeneration)
-			log.Println(err)
-			return metadata.Pairs()
-		}
-
-		// Set user id, role and jwt (csrf token passed directly from http request)
-		return metadata.Pairs(
-			KeyUserID, strconv.Itoa(sessionData.UserID),
-			KeyUserRole, sessionData.Role,
-			KeyAuthorization, jwt,
-			KeyUserCSRFToken, r.Header.Get(KeyUserCSRFToken),
-		)
+	if !ok {
+		return metadata.Pairs()
 	}
 
-	return metadata.Pairs()
+	sessionData := sessionDataValue.(*Session)
+	// Generate JWT
+	jwt, err := m.config.JWT.Generate(sessionData.UserID, sessionData.Role, sessionData.CSRFToken)
+	if err != nil {
+		log.Println(ErrFailedTokenGeneration)
+		log.Println(err)
+		return metadata.Pairs()
+	}
+
+	// Set user id, role and jwt (csrf token passed directly from http request)
+	return metadata.Pairs(
+		KeyUserID, strconv.Itoa(sessionData.UserID),
+		KeyUserRole, sessionData.Role,
+		KeyAuthorization, jwt,
+		KeyUserCSRFToken, r.Header.Get(KeyUserCSRFToken),
+	)
 }
 
 // ResponseModifier checks whether the gRPC method called has requested for changing the response
