@@ -160,6 +160,11 @@ func (m *Modifier) prepareSession(req *http.Request, userID int, role string, de
 	return session, nil
 }
 
+// GetRequestFromContext pulls the request from context (set in middleware above)
+func GetRequestFromContext(ctx context.Context) *http.Request {
+	return ctx.Value(requestContextKey).(*http.Request)
+}
+
 // getSessionTimeout returns the session timeout value set in env
 func getSessionTimeout(delete bool, timeout int) int {
 	if delete {
@@ -167,11 +172,6 @@ func getSessionTimeout(delete bool, timeout int) int {
 	}
 
 	return timeout
-}
-
-// pull the request from context (set in middleware above)
-func getRequestFromContext(ctx context.Context) *http.Request {
-	return ctx.Value(requestContextKey).(*http.Request)
 }
 
 // getUserID returns the current session user ID
