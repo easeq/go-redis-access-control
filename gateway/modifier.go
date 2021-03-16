@@ -101,7 +101,7 @@ func (m *Modifier) ResponseModifier(ctx context.Context, w http.ResponseWriter, 
 	role, _ := getUserRole(md)
 
 	// Get HTTP request saved in context, and attach session to it
-	request := getRequestFromContext(ctx)
+	request := GetRequestFromContext(ctx)
 	session, err := m.prepareSession(request, userID, role, deleteSession)
 	if err != nil {
 		return err
