@@ -3,10 +3,11 @@ package gateway
 import (
 	"context"
 	"encoding/gob"
-	"fmt"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/easeq/go-redis-access-control/manager"
 	"github.com/gorilla/sessions"
@@ -22,6 +23,9 @@ type Modifier struct {
 	config *manager.Config
 }
 
+// SessionMetadata is a key => value map of additional data saved in the session
+type SessionMetadata map[string]string
+
 // Session is the structure holding session data that gorilla's session
 // store will convert into a cookie.
 type Session struct {
@@ -31,21 +35,32 @@ type Session struct {
 	CSRFToken *manager.Token
 	// User role
 	Role string
+	// Metadata
+	Metadata SessionMetadata
 }
 
 const (
+	// SessionDataPrefix is the prefix that gRPC needs to use to set session data
+	SessionDataPrefix = "Grac-Session-User-"
 	// KeyUserID is identifier to get the current user's ID from the session store
-	KeyUserID = "Grac-Session-User-Id"
+	KeyUserID = "Id"
 	// KeyUserRole is the identifier to get the current user's role from the session store
-	KeyUserRole = "Grac-Session-User-Role"
+	KeyUserRole = "Role"
 	// KeyDeleteSession is the identifier to check whether the session should be deleted
 	KeyDeleteSession = "Grac-Is-Delete-Session"
 	// KeyAuthorization is the key to look for the authorization header
 	KeyAuthorization = "authorization"
 	// KeyUserCSRFToken is the identifier for csrf token
 	KeyUserCSRFToken = "X-Xsrf-Token"
+	// KeyGrpcMetadata is the key attached by gRPC gateway for the metadata sent by gRPC method
+	KeyGrpcMetadata = "Grpc-Metadata-"
+)
+
+var (
 	// ErrFailedTokenGeneration is to show when the token generation fails
-	ErrFailedTokenGeneration = "GRAC Error: Failed to generate access token"
+	ErrFailedTokenGeneration = errors.New("GRAC Error: Failed to generate access token")
+	// ErrUserIDOrRoleNotProvided returned when session creation is requested without UserID and Role
+	ErrUserIDOrRoleNotProvided = errors.New("Session requires a UserID and Role")
 )
 
 func init() {
@@ -65,12 +80,12 @@ func (m *Modifier) MetadataAnnotator(ctx context.Context, r *http.Request) metad
 		return metadata.Pairs()
 	}
 
-	sessionDataValue, ok := session.Values["data"]
+	// Get data saved in the session
+	sessionData, ok := getSessionData(session)
 	if !ok {
 		return metadata.Pairs()
 	}
 
-	sessionData := sessionDataValue.(*Session)
 	// Generate JWT
 	jwt, err := m.config.JWT.Generate(sessionData.UserID, sessionData.Role, sessionData.CSRFToken)
 	if err != nil {
@@ -80,12 +95,19 @@ func (m *Modifier) MetadataAnnotator(ctx context.Context, r *http.Request) metad
 	}
 
 	// Set user id, role and jwt (csrf token passed directly from http request)
-	return metadata.Pairs(
+	md := metadata.Pairs(
 		KeyUserID, strconv.Itoa(sessionData.UserID),
 		KeyUserRole, sessionData.Role,
 		KeyAuthorization, jwt,
 		KeyUserCSRFToken, r.Header.Get(KeyUserCSRFToken),
 	)
+
+	// Append session metadata to gRPC metadata
+	for k, v := range sessionData.Metadata {
+		md.Append(SessionDataPrefix+k, v)
+	}
+
+	return md
 }
 
 // ResponseModifier checks whether the gRPC method called has requested for changing the response
@@ -97,12 +119,10 @@ func (m *Modifier) ResponseModifier(ctx context.Context, w http.ResponseWriter, 
 	}
 
 	deleteSession, _ := isDeleteSession(md)
-	userID, _ := getUserID(md)
-	role, _ := getUserRole(md)
 
 	// Get HTTP request saved in context, and attach session to it
 	request := GetRequestFromContext(ctx)
-	session, err := m.prepareSession(request, userID, role, deleteSession)
+	session, err := m.prepareSession(request, deleteSession, md.HeaderMD)
 	if err != nil {
 		return err
 	}
@@ -112,21 +132,38 @@ func (m *Modifier) ResponseModifier(ctx context.Context, w http.ResponseWriter, 
 		w.Header().Set(KeyUserCSRFToken, sessionData.CSRFToken.ToURLSafeString())
 	}
 
-	// Delete gRPC data that should not be passed as headers in the HTTP response
-	deleteGrpcMetadata(w, KeyUserID, KeyUserRole, KeyDeleteSession, KeyUserCSRFToken)
+	// Delete gRPC metadata from being passed as http headers
+	deleteGrpcMetadata(w)
 
 	// Save the session
 	return m.store.Save(request, w, session)
 }
 
-func deleteGrpcMetadata(w http.ResponseWriter, keys ...string) {
-	for _, key := range keys {
-		delete(w.Header(), "Grpc-Metadata-"+key)
+// Delete all gRPC metadata from http header
+func deleteGrpcMetadata(w http.ResponseWriter) {
+	for k, _ := range w.Header() {
+		if !strings.HasPrefix(k, KeyGrpcMetadata) {
+			continue
+		}
+
+		delete(w.Header(), k)
 	}
 }
 
-func (m *Modifier) prepareSession(req *http.Request, userID int, role string, deleteSession bool) (*sessions.Session, error) {
+// Prepare http session
+func (m *Modifier) prepareSession(
+	req *http.Request,
+	deleteSession bool,
+	md metadata.MD,
+) (*sessions.Session, error) {
+	// Get the saved session for the request, from redis store
 	session, err := m.store.New(req, m.config.Redis.DefaultSessionID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Prepare session data from gRPC metadata
+	sessionData, err := prepareSessionData(md)
 	if err != nil {
 		return nil, err
 	}
@@ -142,14 +179,23 @@ func (m *Modifier) prepareSession(req *http.Request, userID int, role string, de
 		if err != nil {
 			return nil, err
 		}
+		sessionData.CSRFToken = csrfToken
 
-		sessionData := &Session{
-			UserID:    userID,
-			CSRFToken: csrfToken,
-			Role:      role,
+		if sessionData.UserID <= 0 || sessionData.Role == "" {
+			return nil, ErrUserIDOrRoleNotProvided
 		}
 
 		session.Values["data"] = sessionData
+	} else {
+		// Get old session data stored in the session
+		oldSessionData, ok := getSessionData(session)
+		if ok {
+			// Only update the session metdata.
+			// UserID, Role and CSRFToken cannot be modified
+			for k, v := range sessionData.Metadata {
+				oldSessionData.Metadata[k] = v
+			}
+		}
 	}
 
 	session.Options.MaxAge = getSessionTimeout(
@@ -174,37 +220,48 @@ func getSessionTimeout(delete bool, timeout int) int {
 	return timeout
 }
 
-// getUserID returns the current session user ID
-func getUserID(md runtime.ServerMetadata) (int, error) {
-	userID, _ := metadataByKey(md, KeyUserID)
-	if userID == "" {
-		return 0, fmt.Errorf("Invalid user")
-	}
-
-	return strconv.Atoi(userID)
-}
-
-// getUserRole returns the current session user role
-func getUserRole(md runtime.ServerMetadata) (string, error) {
-	return metadataByKey(md, KeyUserRole)
-}
-
 // isDeleteSession returns whether to delete the existing session or not
 func isDeleteSession(md runtime.ServerMetadata) (bool, error) {
-	delete, _ := metadataByKey(md, KeyDeleteSession)
-	if delete == "" {
+	values := md.HeaderMD.Get(KeyDeleteSession)
+	if len(values) == 0 {
 		return false, nil
 	}
 
-	return strconv.ParseBool(delete)
+	return strconv.ParseBool(values[0])
 }
 
-// metadataByKey returns the value of the first metadata with the provided key
-func metadataByKey(md runtime.ServerMetadata, key string) (string, error) {
-	values := md.HeaderMD.Get(key)
-	if len(values) == 0 {
-		return "", fmt.Errorf("Value %s is required", key)
+// getSessionData returns the data saved in the session
+func getSessionData(session *sessions.Session) (*Session, bool) {
+	sessionDataValue, ok := session.Values["data"]
+	if !ok {
+		return nil, false
 	}
 
-	return values[0], nil
+	return sessionDataValue.(*Session), true
+}
+
+// prepareSessionData returns all the session related data
+func prepareSessionData(mds metadata.MD) (*Session, error) {
+	sessionData := new(Session)
+	for k, v := range mds {
+		if !strings.HasPrefix(k, SessionDataPrefix) {
+			continue
+		}
+
+		key := strings.TrimPrefix(k, SessionDataPrefix)
+		switch key {
+		case KeyUserID:
+			userID, err := strconv.Atoi(v[0])
+			if err != nil {
+				return nil, err
+			}
+			sessionData.UserID = userID
+		case KeyUserRole:
+			sessionData.Role = v[0]
+		default:
+			sessionData.Metadata[key] = v[0]
+		}
+	}
+
+	return sessionData, nil
 }
