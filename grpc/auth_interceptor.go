@@ -132,3 +132,9 @@ func GetCurrentUserRole(ctx context.Context) (string, error) {
 	md, _ := getMetaDataFromContext(ctx)
 	return MetadataByKey(md, gateway.KeyUserRole)
 }
+
+// GetCurrentUserMetadataByKey returns the current user's metadata by key
+func GetCurrentUserMetadataByKey(ctx context.Context, key string) (string, error) {
+	md, _ := getMetaDataFromContext(ctx)
+	return MetadataByKey(md, gateway.GetMetadataKey(key))
+}
