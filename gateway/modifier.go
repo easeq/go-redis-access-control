@@ -211,6 +211,11 @@ func GetRequestFromContext(ctx context.Context) *http.Request {
 	return ctx.Value(requestContextKey).(*http.Request)
 }
 
+// GetMetadataKey returns the prepared key for session metadata
+func GetMetadataKey(key string) string {
+	return SessionDataPrefix + key
+}
+
 // getSessionTimeout returns the session timeout value set in env
 func getSessionTimeout(delete bool, timeout int) int {
 	if delete {
