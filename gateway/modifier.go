@@ -181,9 +181,9 @@ func (m *Modifier) prepareSession(
 		}
 		sessionData.CSRFToken = csrfToken
 
-		if sessionData.UserID <= 0 || sessionData.Role == "" {
-			return nil, ErrUserIDOrRoleNotProvided
-		}
+		// if sessionData.UserID <= 0 || sessionData.Role == "" {
+		// 	return nil, ErrUserIDOrRoleNotProvided
+		// }
 
 		session.Values["data"] = sessionData
 	} else {
