@@ -127,27 +127,13 @@ func (m *Modifier) ResponseModifier(ctx context.Context, w http.ResponseWriter, 
 		return err
 	}
 
-	if sessionDataValue, ok := session.Values["data"]; ok && deleteSession != true {
+	if sessionDataValue, ok := session.Values["data"]; ok && !deleteSession {
 		sessionData := sessionDataValue.(*Session)
 		w.Header().Set(KeyUserCSRFToken, sessionData.CSRFToken.ToURLSafeString())
 	}
 
-	// Delete gRPC metadata from being passed as http headers
-	deleteGrpcMetadata(w)
-
 	// Save the session
 	return m.store.Save(request, w, session)
-}
-
-// Delete all gRPC metadata from http header
-func deleteGrpcMetadata(w http.ResponseWriter) {
-	for k, _ := range w.Header() {
-		if !strings.HasPrefix(k, KeyGrpcMetadata) {
-			continue
-		}
-
-		delete(w.Header(), k)
-	}
 }
 
 // Prepare http session
@@ -168,7 +154,7 @@ func (m *Modifier) prepareSession(
 		return nil, err
 	}
 
-	if session.IsNew == true {
+	if session.IsNew {
 		session.Options.Domain = m.config.Redis.SessionDomain
 		session.Options.Path = "/"
 		session.Options.SameSite = http.SameSiteLaxMode
