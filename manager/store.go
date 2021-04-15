@@ -9,12 +9,13 @@ import (
 
 // Redis config
 type Redis struct {
-	Address          string `env:"GRAC_REDIS_ADDRESS"`
-	DefaultSessionID string `env:"GRAC_DEFAULT_SESSION_ID"`
+	Address          string `env:"GRAC_REDIS_ADDRESS,default=localhost:6379"`
+	DefaultSessionID string `env:"GRAC_DEFAULT_SESSION_ID,default=__sess-id"`
 	SessionDomain    string `env:"GRAC_SESSION_DOMAIN"`
-	SessionTimeout   int    `env:"GRAC_SESSION_TIMEOUT"`
-	SecureCookie     bool   `env:"GRAC_SECURE_COOKIE"`
-	CSRFTokenLength  int    `env:"GRAC_CSRF_TOKEN_LENGTH"`
+	SessionTimeout   int    `env:"GRAC_SESSION_TIMEOUT,default=3600"`
+	SecureCookie     bool   `env:"GRAC_SECURE_COOKIE,default=true"`
+	SameSite         int    `env:"GRAC_COOKIE_SAMESITE,default=3"`
+	CSRFTokenLength  int    `env:"GRAC_CSRF_TOKEN_LENGTH,default=128"`
 }
 
 // NewRedisClient creates a new redis client

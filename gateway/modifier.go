@@ -157,7 +157,7 @@ func (m *Modifier) prepareSession(
 	if session.IsNew {
 		session.Options.Domain = m.config.Redis.SessionDomain
 		session.Options.Path = "/"
-		session.Options.SameSite = http.SameSiteLaxMode
+		session.Options.SameSite = http.SameSite(m.config.Redis.SameSite)
 		session.Options.HttpOnly = true
 		session.Options.Secure = m.config.Redis.SecureCookie
 

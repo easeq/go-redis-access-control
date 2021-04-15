@@ -10,8 +10,8 @@ import (
 
 // JWT is a JSON web token manager
 type JWT struct {
-	SecretKey string        `env:"GRAC_JWT_SECRET_KEY"`
-	Duration  time.Duration `env:"GRAC_JWT_DURATION"`
+	SecretKey string        `env:"GRAC_JWT_SECRET_KEY,required=true"`
+	Duration  time.Duration `env:"GRAC_JWT_DURATION,default=30s"`
 }
 
 // Claims defines the custom JWT claims
