@@ -41,9 +41,14 @@ func (t *Token) GetMessage(random string) []byte {
 	return []byte(fmt.Sprintf("%s:%s", t.sessId, random))
 }
 
-// ToURLSafeString returns a base64 encoded URL safe random string
+// ToURLSafeString returns a base64 encoded URL safe token string
 func (t *Token) ToURLSafeString(randN []byte) string {
 	return base64.URLEncoding.EncodeToString(t.Get(randN))
+}
+
+// String returns a token string
+func (t *Token) String(randN []byte) string {
+	return string(t.Get(randN))
 }
 
 // Compare request HMAC with calculated HMAC

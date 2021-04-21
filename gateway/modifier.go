@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/easeq/go-redis-access-control/manager"
 	"github.com/gorilla/sessions"
@@ -165,13 +164,13 @@ func (m *Modifier) ResponseModifier(ctx context.Context, w http.ResponseWriter, 
 	// Set CSRF token in cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     KeyUserCSRFToken,
-		Value:    csrfToken.ToURLSafeString(randN),
-		Expires:  time.Now().Add(time.Hour),
+		Value:    csrfToken.String(randN),
 		Domain:   m.config.Redis.SessionDomain,
 		Path:     "/",
 		Secure:   true,
 		HttpOnly: false,
 		SameSite: http.SameSite(m.config.Redis.SameSite),
+		MaxAge:   session.Options.MaxAge,
 	})
 
 	return nil
