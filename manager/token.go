@@ -8,10 +8,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 )
 
 type CSRF struct {
-	Key        []byte `env:"GRAC_CSRF_KEY"`
+	Key        string `env:"GRAC_CSRF_KEY"`
 	RandLength int    `env:"GRAC_CSRF_RANDOM_LENGTH,default=10"`
 }
 
@@ -29,11 +30,11 @@ func (c *CSRF) Create(sessId string) *Token {
 // Get returns the byte representation of the the Token
 // HMAC(sessId + Random(10))
 // Token(HMAC() + Random(10))
-func (t *Token) Get(randN []byte) []byte {
-	mac := hmac.New(sha512.New, t.Key)
-	mac.Write(t.GetMessage(string(randN)))
+func (t *Token) Get(randN string) []byte {
+	mac := hmac.New(sha512.New, []byte(t.Key))
+	mac.Write(t.GetMessage(randN))
 
-	return append(mac.Sum(nil), randN...)
+	return append(mac.Sum(nil), []byte(randN)...)
 }
 
 // GetMessage returns the message to HMAC
@@ -42,13 +43,8 @@ func (t *Token) GetMessage(random string) []byte {
 }
 
 // ToURLSafeString returns a base64 encoded URL safe token string
-func (t *Token) ToURLSafeString(randN []byte) string {
+func (t *Token) ToURLSafeString(randN string) string {
 	return base64.URLEncoding.EncodeToString(t.Get(randN))
-}
-
-// String returns a token string
-func (t *Token) String(randN []byte) string {
-	return string(t.Get(randN))
 }
 
 // Compare request HMAC with calculated HMAC
@@ -61,7 +57,7 @@ func (t *Token) Validate(hmacWithTs string) bool {
 
 	// Get the last RandLength characters from string
 	messageHmac := decodedHmacWithTs[0 : len(decodedHmacWithTs)-t.RandLength]
-	randN := decodedHmacWithTs[len(decodedHmacWithTs)-t.RandLength:]
+	randN := string(decodedHmacWithTs[len(decodedHmacWithTs)-t.RandLength:])
 
 	// Generate HMAC using session ID and timestamp from the request
 	expectedHmac := t.Get(randN)
@@ -69,19 +65,22 @@ func (t *Token) Validate(hmacWithTs string) bool {
 	return hmac.Equal(messageHmac, expectedHmac)
 }
 
-// GenerateRandomBytes returns securely generated random bytes.
+// GenerateRandomString returns a securely generated random string.
 // It will return an error if the system's secure random
 // number generator fails to function correctly, in which
 // case the caller should not continue.
-func GenerateRandomBytes(n int) ([]byte, error) {
-	b := make([]byte, n)
-	_, err := rand.Read(b)
-	// Note that err == nil only if we read len(b) bytes.
-	if err != nil {
-		return nil, err
+func GenerateRandomString(n int) (string, error) {
+	const letters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-"
+	ret := make([]byte, n)
+	for i := 0; i < n; i++ {
+		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(letters))))
+		if err != nil {
+			return "", err
+		}
+		ret[i] = letters[num.Int64()]
 	}
 
-	return b, nil
+	return string(ret), nil
 }
 
 func init() {

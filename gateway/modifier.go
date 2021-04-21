@@ -156,7 +156,7 @@ func (m *Modifier) ResponseModifier(ctx context.Context, w http.ResponseWriter, 
 	}
 
 	// Generate random part of the token
-	randN, err := manager.GenerateRandomBytes(m.config.CSRF.RandLength)
+	randN, err := manager.GenerateRandomString(m.config.CSRF.RandLength)
 	if err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ func (m *Modifier) ResponseModifier(ctx context.Context, w http.ResponseWriter, 
 	// Set CSRF token in cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     KeyUserCSRFToken,
-		Value:    csrfToken.String(randN),
+		Value:    csrfToken.ToURLSafeString(randN),
 		Domain:   m.config.Redis.SessionDomain,
 		Path:     "/",
 		Secure:   true,
