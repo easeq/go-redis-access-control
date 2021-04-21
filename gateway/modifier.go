@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/easeq/go-redis-access-control/manager"
 	"github.com/gorilla/sessions"
@@ -54,6 +55,8 @@ const (
 	KeyUserCSRFToken = "X-Xsrf-Token"
 	// KeyGrpcMetadata is the key attached by gRPC gateway for the metadata sent by gRPC method
 	KeyGrpcMetadata = "Grpc-Metadata-"
+	// KeySessionID is the key to get the current session ID
+	KeySessionID = "Session-ID"
 )
 
 var (
@@ -61,6 +64,16 @@ var (
 	ErrFailedTokenGeneration = errors.New("GRAC Error: Failed to generate access token")
 	// ErrUserIDOrRoleNotProvided returned when session creation is requested without UserID and Role
 	ErrUserIDOrRoleNotProvided = errors.New("Session requires a UserID and Role")
+	// HTTPSafeMethods maintains a map of whether the method is safe or not
+	HTTPSafeMethods = map[string]bool{
+		"GET":     true,
+		"HEAD":    true,
+		"OPTIONS": true,
+		"POST":    false,
+		"PUT":     false,
+		"PATCH":   false,
+		"DELETE":  false,
+	}
 )
 
 func init() {
@@ -94,12 +107,17 @@ func (m *Modifier) MetadataAnnotator(ctx context.Context, r *http.Request) metad
 		return metadata.Pairs()
 	}
 
+	// Validate CSRF Token
+	safe, ok := HTTPSafeMethods[r.Method]
+	if !ok || (!safe && !m.config.CSRF.Create(session.ID).Validate(r.Header.Get(KeyUserCSRFToken))) {
+		return metadata.Pairs()
+	}
+
 	// Set user id, role and jwt (csrf token passed directly from http request)
 	md := metadata.Pairs(
 		KeyUserID, strconv.Itoa(sessionData.UserID),
 		KeyUserRole, sessionData.Role,
 		KeyAuthorization, jwt,
-		KeyUserCSRFToken, r.Header.Get(KeyUserCSRFToken),
 	)
 
 	// Append session metadata to gRPC metadata
@@ -127,13 +145,36 @@ func (m *Modifier) ResponseModifier(ctx context.Context, w http.ResponseWriter, 
 		return err
 	}
 
-	if sessionDataValue, ok := session.Values["data"]; ok && !deleteSession {
-		sessionData := sessionDataValue.(*Session)
-		w.Header().Set(KeyUserCSRFToken, sessionData.CSRFToken.ToURLSafeString())
+	// Save the session
+	if err := m.store.Save(request, w, session); err != nil {
+		return err
 	}
 
-	// Save the session
-	return m.store.Save(request, w, session)
+	// Generate CSRF token
+	csrfToken := m.config.CSRF.Create(session.ID)
+	if err != nil {
+		return err
+	}
+
+	// Generate random part of the token
+	randN, err := manager.GenerateRandomBytes(m.config.CSRF.RandLength)
+	if err != nil {
+		return err
+	}
+
+	// Set CSRF token in cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     KeyUserCSRFToken,
+		Value:    csrfToken.ToURLSafeString(randN),
+		Expires:  time.Now().Add(time.Hour),
+		Domain:   m.config.Redis.SessionDomain,
+		Path:     "/",
+		Secure:   true,
+		HttpOnly: false,
+		SameSite: http.SameSite(m.config.Redis.SameSite),
+	})
+
+	return nil
 }
 
 // Prepare http session
@@ -160,16 +201,6 @@ func (m *Modifier) prepareSession(
 		session.Options.SameSite = http.SameSite(m.config.Redis.SameSite)
 		session.Options.HttpOnly = true
 		session.Options.Secure = m.config.Redis.SecureCookie
-
-		csrfToken, err := manager.NewToken(m.config.Redis.CSRFTokenLength)
-		if err != nil {
-			return nil, err
-		}
-		sessionData.CSRFToken = csrfToken
-
-		// if sessionData.UserID <= 0 || sessionData.Role == "" {
-		// 	return nil, ErrUserIDOrRoleNotProvided
-		// }
 
 		session.Values["data"] = sessionData
 	} else {

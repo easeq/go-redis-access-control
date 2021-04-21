@@ -92,11 +92,6 @@ func (interceptor *AuthInterceptor) authorize(ctx context.Context, endpoint stri
 		return ErrAccessDenied
 	}
 
-	csrfToken, _ := MetadataByKey(md, gateway.KeyUserCSRFToken)
-	if !claims.RandomToken.Compare(csrfToken) {
-		return ErrAccessDenied
-	}
-
 	return nil
 }
 

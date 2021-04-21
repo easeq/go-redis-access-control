@@ -39,7 +39,7 @@ func (e Endpoint) Register(action Action) {
 	registeredEndpoints[e] = action
 }
 
-// CanAccessWithRole returrns whether the given endpoint is accessible with the users permissions
+// CanAccessWithRole returns whether the given endpoint is accessible with the users permissions
 //
 // The method returns false when the action is un-registered or
 // the user doesn't have enough permissions
