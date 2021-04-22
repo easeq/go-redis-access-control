@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/easeq/go-redis-access-control/gateway"
 	"github.com/easeq/go-redis-access-control/manager"
@@ -92,7 +93,38 @@ func (interceptor *AuthInterceptor) authorize(ctx context.Context, endpoint stri
 		return ErrAccessDenied
 	}
 
+	// Verify CSRF token
+	if !interceptor.VerifyCSRF(md) {
+		return ErrAccessDenied
+	}
+
 	return nil
+}
+
+// Verify CSRF token, return true if valid, false otherwise
+func (interceptor *AuthInterceptor) VerifyCSRF(md metadata.MD) bool {
+	cfg, err := manager.NewConfig()
+	if err != nil {
+		log.Println("Error loading config: ", err)
+		return false
+	}
+
+	sessionId, err := MetadataByKey(md, gateway.KeySessionID)
+	if err != nil {
+		return false
+	}
+
+	csrfToken, err := MetadataByKey(md, gateway.KeyUserCSRFToken)
+	if err != nil {
+		return false
+	}
+
+	// CSRF token verification
+	if !cfg.CSRF.Create(sessionId).Validate(csrfToken) {
+		return false
+	}
+
+	return true
 }
 
 // SetSessionData sets the data to be stored in the session store.

@@ -41,21 +41,21 @@ type Session struct {
 
 const (
 	// SessionDataPrefix is the prefix that gRPC needs to use to set session data
-	SessionDataPrefix = "Grac-Session-User-"
+	SessionDataPrefix = "grac-session-user-"
 	// KeyUserID is identifier to get the current user's ID from the session store
-	KeyUserID = "Id"
+	KeyUserID = "id"
 	// KeyUserRole is the identifier to get the current user's role from the session store
-	KeyUserRole = "Role"
+	KeyUserRole = "role"
 	// KeyDeleteSession is the identifier to check whether the session should be deleted
-	KeyDeleteSession = "Grac-Is-Delete-Session"
+	KeyDeleteSession = "grac-is-delete-session"
 	// KeyAuthorization is the key to look for the authorization header
 	KeyAuthorization = "authorization"
 	// KeyUserCSRFToken is the identifier for csrf token
-	KeyUserCSRFToken = "X-Xsrf-Token"
+	KeyUserCSRFToken = "x-xsrf-token"
 	// KeyGrpcMetadata is the key attached by gRPC gateway for the metadata sent by gRPC method
-	KeyGrpcMetadata = "Grpc-Metadata-"
+	KeyGrpcMetadata = "grpc-metadata-"
 	// KeySessionID is the key to get the current session ID
-	KeySessionID = "Session-ID"
+	KeySessionID = "session-id"
 )
 
 var (
@@ -106,18 +106,24 @@ func (m *Modifier) MetadataAnnotator(ctx context.Context, r *http.Request) metad
 		return metadata.Pairs()
 	}
 
+	// log.Println("JWT", jwt)
+
 	// Validate CSRF Token
-	safe, ok := HTTPSafeMethods[r.Method]
-	if !ok || (!safe && !m.config.CSRF.Create(session.ID).Validate(r.Header.Get(KeyUserCSRFToken))) {
-		return metadata.Pairs()
-	}
+	// safe, ok := HTTPSafeMethods[r.Method]
+	// if !ok || (!safe && !m.config.CSRF.Create(session.ID).Validate(r.Header.Get(KeyUserCSRFToken))) {
+	// 	return metadata.Pairs()
+	// }
 
 	// Set user id, role and jwt (csrf token passed directly from http request)
 	md := metadata.Pairs(
 		KeyUserID, strconv.Itoa(sessionData.UserID),
 		KeyUserRole, sessionData.Role,
 		KeyAuthorization, jwt,
+		KeyUserCSRFToken, r.Header.Get(KeyUserCSRFToken),
+		KeySessionID, session.ID,
 	)
+
+	log.Println("Session Metadata", sessionData.Metadata)
 
 	// Append session metadata to gRPC metadata
 	for k, v := range sessionData.Metadata {
@@ -164,7 +170,7 @@ func (m *Modifier) ResponseModifier(ctx context.Context, w http.ResponseWriter, 
 	// Set CSRF token in cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     KeyUserCSRFToken,
-		Value:    csrfToken.ToURLSafeString(randN),
+		Value:    csrfToken.ToURLSafeString(randN, true),
 		Domain:   m.config.Redis.SessionDomain,
 		Path:     "/",
 		Secure:   true,
@@ -267,6 +273,10 @@ func prepareSessionData(mds metadata.MD) (*Session, error) {
 	for k, v := range mds {
 		if !strings.HasPrefix(k, SessionDataPrefix) {
 			continue
+		}
+
+		if sessionData.Metadata == nil {
+			sessionData.Metadata = make(SessionMetadata)
 		}
 
 		key := strings.TrimPrefix(k, SessionDataPrefix)

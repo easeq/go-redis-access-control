@@ -30,11 +30,15 @@ func (c *CSRF) Create(sessId string) *Token {
 // Get returns the byte representation of the the Token
 // HMAC(sessId + Random(10))
 // Token(HMAC() + Random(10))
-func (t *Token) Get(randN string) []byte {
+func (t *Token) Get(randN string, appendRandN bool) []byte {
 	mac := hmac.New(sha512.New, []byte(t.Key))
 	mac.Write(t.GetMessage(randN))
 
-	return append(mac.Sum(nil), []byte(randN)...)
+	if appendRandN {
+		return append(mac.Sum(nil), []byte(randN)...)
+	}
+
+	return mac.Sum(nil)
 }
 
 // GetMessage returns the message to HMAC
@@ -43,14 +47,14 @@ func (t *Token) GetMessage(random string) []byte {
 }
 
 // ToURLSafeString returns a base64 encoded URL safe token string
-func (t *Token) ToURLSafeString(randN string) string {
-	return base64.URLEncoding.EncodeToString(t.Get(randN))
+func (t *Token) ToURLSafeString(randN string, appendRandN bool) string {
+	return base64.URLEncoding.EncodeToString(t.Get(randN, appendRandN))
 }
 
 // Compare request HMAC with calculated HMAC
 func (t *Token) Validate(hmacWithTs string) bool {
 	decodedHmacWithTs, err := base64.URLEncoding.DecodeString(hmacWithTs)
-	if err != nil {
+	if err != nil || len(decodedHmacWithTs) == 0 {
 		log.Printf("Error decoding HMAC string: %s\n", err)
 		return false
 	}
@@ -60,7 +64,7 @@ func (t *Token) Validate(hmacWithTs string) bool {
 	randN := string(decodedHmacWithTs[len(decodedHmacWithTs)-t.RandLength:])
 
 	// Generate HMAC using session ID and timestamp from the request
-	expectedHmac := t.Get(randN)
+	expectedHmac := t.Get(randN, false)
 
 	return hmac.Equal(messageHmac, expectedHmac)
 }
