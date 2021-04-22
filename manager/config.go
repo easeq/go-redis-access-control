@@ -10,6 +10,7 @@ import (
 type Config struct {
 	JWT   JWT
 	Redis Redis
+	CSRF  CSRF
 }
 
 // NewConfig returns a loaded module config

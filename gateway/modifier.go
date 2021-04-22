@@ -41,19 +41,21 @@ type Session struct {
 
 const (
 	// SessionDataPrefix is the prefix that gRPC needs to use to set session data
-	SessionDataPrefix = "Grac-Session-User-"
+	SessionDataPrefix = "grac-session-user-"
 	// KeyUserID is identifier to get the current user's ID from the session store
-	KeyUserID = "Id"
+	KeyUserID = "id"
 	// KeyUserRole is the identifier to get the current user's role from the session store
-	KeyUserRole = "Role"
+	KeyUserRole = "role"
 	// KeyDeleteSession is the identifier to check whether the session should be deleted
-	KeyDeleteSession = "Grac-Is-Delete-Session"
+	KeyDeleteSession = "grac-is-delete-session"
 	// KeyAuthorization is the key to look for the authorization header
 	KeyAuthorization = "authorization"
 	// KeyUserCSRFToken is the identifier for csrf token
-	KeyUserCSRFToken = "X-Xsrf-Token"
+	KeyUserCSRFToken = "x-xsrf-token"
 	// KeyGrpcMetadata is the key attached by gRPC gateway for the metadata sent by gRPC method
-	KeyGrpcMetadata = "Grpc-Metadata-"
+	KeyGrpcMetadata = "grpc-metadata-"
+	// KeySessionID is the key to get the current session ID
+	KeySessionID = "session-id"
 )
 
 var (
@@ -61,6 +63,16 @@ var (
 	ErrFailedTokenGeneration = errors.New("GRAC Error: Failed to generate access token")
 	// ErrUserIDOrRoleNotProvided returned when session creation is requested without UserID and Role
 	ErrUserIDOrRoleNotProvided = errors.New("Session requires a UserID and Role")
+	// HTTPSafeMethods maintains a map of whether the method is safe or not
+	HTTPSafeMethods = map[string]bool{
+		"GET":     true,
+		"HEAD":    true,
+		"OPTIONS": true,
+		"POST":    false,
+		"PUT":     false,
+		"PATCH":   false,
+		"DELETE":  false,
+	}
 )
 
 func init() {
@@ -94,13 +106,24 @@ func (m *Modifier) MetadataAnnotator(ctx context.Context, r *http.Request) metad
 		return metadata.Pairs()
 	}
 
+	// log.Println("JWT", jwt)
+
+	// Validate CSRF Token
+	// safe, ok := HTTPSafeMethods[r.Method]
+	// if !ok || (!safe && !m.config.CSRF.Create(session.ID).Validate(r.Header.Get(KeyUserCSRFToken))) {
+	// 	return metadata.Pairs()
+	// }
+
 	// Set user id, role and jwt (csrf token passed directly from http request)
 	md := metadata.Pairs(
 		KeyUserID, strconv.Itoa(sessionData.UserID),
 		KeyUserRole, sessionData.Role,
 		KeyAuthorization, jwt,
 		KeyUserCSRFToken, r.Header.Get(KeyUserCSRFToken),
+		KeySessionID, session.ID,
 	)
+
+	log.Println("Session Metadata", sessionData.Metadata)
 
 	// Append session metadata to gRPC metadata
 	for k, v := range sessionData.Metadata {
@@ -127,13 +150,36 @@ func (m *Modifier) ResponseModifier(ctx context.Context, w http.ResponseWriter, 
 		return err
 	}
 
-	if sessionDataValue, ok := session.Values["data"]; ok && !deleteSession {
-		sessionData := sessionDataValue.(*Session)
-		w.Header().Set(KeyUserCSRFToken, sessionData.CSRFToken.ToURLSafeString())
+	// Save the session
+	if err := m.store.Save(request, w, session); err != nil {
+		return err
 	}
 
-	// Save the session
-	return m.store.Save(request, w, session)
+	// Generate CSRF token
+	csrfToken := m.config.CSRF.Create(session.ID)
+	if err != nil {
+		return err
+	}
+
+	// Generate random part of the token
+	randN, err := manager.GenerateRandomString(m.config.CSRF.RandLength)
+	if err != nil {
+		return err
+	}
+
+	// Set CSRF token in cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     KeyUserCSRFToken,
+		Value:    csrfToken.ToURLSafeString(randN, true),
+		Domain:   m.config.Redis.SessionDomain,
+		Path:     "/",
+		Secure:   true,
+		HttpOnly: false,
+		SameSite: http.SameSite(m.config.Redis.SameSite),
+		MaxAge:   session.Options.MaxAge,
+	})
+
+	return nil
 }
 
 // Prepare http session
@@ -160,16 +206,6 @@ func (m *Modifier) prepareSession(
 		session.Options.SameSite = http.SameSite(m.config.Redis.SameSite)
 		session.Options.HttpOnly = true
 		session.Options.Secure = m.config.Redis.SecureCookie
-
-		csrfToken, err := manager.NewToken(m.config.Redis.CSRFTokenLength)
-		if err != nil {
-			return nil, err
-		}
-		sessionData.CSRFToken = csrfToken
-
-		// if sessionData.UserID <= 0 || sessionData.Role == "" {
-		// 	return nil, ErrUserIDOrRoleNotProvided
-		// }
 
 		session.Values["data"] = sessionData
 	} else {
@@ -237,6 +273,10 @@ func prepareSessionData(mds metadata.MD) (*Session, error) {
 	for k, v := range mds {
 		if !strings.HasPrefix(k, SessionDataPrefix) {
 			continue
+		}
+
+		if sessionData.Metadata == nil {
+			sessionData.Metadata = make(SessionMetadata)
 		}
 
 		key := strings.TrimPrefix(k, SessionDataPrefix)
