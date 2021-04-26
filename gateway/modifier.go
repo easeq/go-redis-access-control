@@ -106,14 +106,6 @@ func (m *Modifier) MetadataAnnotator(ctx context.Context, r *http.Request) metad
 		return metadata.Pairs()
 	}
 
-	// log.Println("JWT", jwt)
-
-	// Validate CSRF Token
-	// safe, ok := HTTPSafeMethods[r.Method]
-	// if !ok || (!safe && !m.config.CSRF.Create(session.ID).Validate(r.Header.Get(KeyUserCSRFToken))) {
-	// 	return metadata.Pairs()
-	// }
-
 	// Set user id, role and jwt (csrf token passed directly from http request)
 	md := metadata.Pairs(
 		KeyUserID, strconv.Itoa(sessionData.UserID),
@@ -122,8 +114,6 @@ func (m *Modifier) MetadataAnnotator(ctx context.Context, r *http.Request) metad
 		KeyUserCSRFToken, r.Header.Get(KeyUserCSRFToken),
 		KeySessionID, session.ID,
 	)
-
-	log.Println("Session Metadata", sessionData.Metadata)
 
 	// Append session metadata to gRPC metadata
 	for k, v := range sessionData.Metadata {
