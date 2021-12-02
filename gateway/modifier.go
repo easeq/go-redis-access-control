@@ -11,10 +11,10 @@ import (
 
 	"github.com/easeq/go-redis-access-control/manager"
 	"github.com/gorilla/sessions"
-	"github.com/grpc-ecosystem/grpc-gateway/runtime"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/rbcervilla/redisstore/v8"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/protobuf/runtime/protoiface"
+	"google.golang.org/protobuf/proto"
 )
 
 // Modifier defines a store to save session
@@ -125,7 +125,7 @@ func (m *Modifier) MetadataAnnotator(ctx context.Context, r *http.Request) metad
 
 // ResponseModifier checks whether the gRPC method called has requested for changing the response
 // before the http response is sent
-func (m *Modifier) ResponseModifier(ctx context.Context, w http.ResponseWriter, resp protoiface.MessageV1) error {
+func (m *Modifier) ResponseModifier(ctx context.Context, w http.ResponseWriter, resp proto.Message) error {
 	md, ok := runtime.ServerMetadataFromContext(ctx)
 	if !ok {
 		return nil
