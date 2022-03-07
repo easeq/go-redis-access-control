@@ -17,7 +17,7 @@ type JWT struct {
 // Claims defines the custom JWT claims
 type Claims struct {
 	jwt.StandardClaims
-	ID          int    `json:"ID"`
+	ID          string `json:"ID"`
 	Role        string `json:"roles"`
 	RandomToken *Token `json:"token"`
 }
@@ -33,7 +33,7 @@ func (jwt *JWT) GetSecretKey() []byte {
 }
 
 // Generate generates and signs a new token with specified claims for a user
-func (jwt *JWT) Generate(ID int, role string, randToken *Token) (string, error) {
+func (jwt *JWT) Generate(ID string, role string, randToken *Token) (string, error) {
 	claims := Claims{
 		ID:          ID,
 		Role:        role,

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/gob"
 	"errors"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -30,7 +29,7 @@ type SessionMetadata map[string]string
 // store will convert into a cookie.
 type Session struct {
 	// User ID
-	UserID int
+	UserID string
 	// CSRF token for the session
 	CSRFToken *manager.Token
 	// User role
@@ -101,14 +100,12 @@ func (m *Modifier) MetadataAnnotator(ctx context.Context, r *http.Request) metad
 	// Generate JWT
 	jwt, err := m.config.JWT.Generate(sessionData.UserID, sessionData.Role, sessionData.CSRFToken)
 	if err != nil {
-		log.Println(ErrFailedTokenGeneration)
-		log.Println(err)
 		return metadata.Pairs()
 	}
 
 	// Set user id, role and jwt (csrf token passed directly from http request)
 	md := metadata.Pairs(
-		KeyUserID, strconv.Itoa(sessionData.UserID),
+		KeyUserID, sessionData.UserID,
 		KeyUserRole, sessionData.Role,
 		KeyAuthorization, jwt,
 		KeyUserCSRFToken, r.Header.Get(KeyUserCSRFToken),
@@ -272,11 +269,7 @@ func prepareSessionData(mds metadata.MD) (*Session, error) {
 		key := strings.TrimPrefix(k, SessionDataPrefix)
 		switch key {
 		case KeyUserID:
-			userID, err := strconv.Atoi(v[0])
-			if err != nil {
-				return nil, err
-			}
-			sessionData.UserID = userID
+			sessionData.UserID = v[0]
 		case KeyUserRole:
 			sessionData.Role = v[0]
 		default:

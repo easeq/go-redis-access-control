@@ -7,7 +7,7 @@ import (
 )
 
 // GetAuthCreds returns a random string, csrf token and access token
-func GetAuthCreds(id int64, role string, sessID string) (string, *manager.Token, string, error) {
+func GetAuthCreds(id string, role string, sessID string) (string, *manager.Token, string, error) {
 	config, err := manager.NewConfig()
 	if err != nil {
 		return "", nil, "", err
@@ -19,7 +19,7 @@ func GetAuthCreds(id int64, role string, sessID string) (string, *manager.Token,
 	}
 
 	csrfToken := config.CSRF.Create(sessID)
-	accessToken, err := config.JWT.Generate(0, role, csrfToken)
+	accessToken, err := config.JWT.Generate(id, role, csrfToken)
 	if err != nil {
 		return "", nil, "", err
 	}
@@ -28,15 +28,15 @@ func GetAuthCreds(id int64, role string, sessID string) (string, *manager.Token,
 }
 
 // GetAuthMD is a helper method to return authorization creds
-func GetAuthMD(id int64, role string, sessID string) (metadata.MD, error) {
-	randN, csrfToken, accessToken, err := GetAuthCreds(id, role, sessID)
+func GetAuthMD(id, role, sessionKey string) (metadata.MD, error) {
+	randN, csrfToken, accessToken, err := GetAuthCreds(id, role, sessionKey)
 	if err != nil {
 		return nil, err
 	}
 
 	md := metadata.New(map[string]string{
 		gateway.KeyAuthorization: accessToken,
-		gateway.KeySessionID:     sessID,
+		gateway.KeySessionID:     sessionKey,
 		gateway.KeyUserCSRFToken: csrfToken.ToURLSafeString(randN, true),
 	})
 
