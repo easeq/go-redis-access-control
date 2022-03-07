@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/easeq/go-redis-access-control/gateway"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -20,7 +21,7 @@ func UnaryClientInterceptor(uid, role, sessionKey string) grpc.UnaryClientInterc
 		invoker grpc.UnaryInvoker,
 		opts ...grpc.CallOption,
 	) error {
-		md, err := GetAuthMD(uid, role, sessionKey)
+		md, err := getAppendedMD(ctx, uid, role, sessionKey)
 		if err != nil {
 			return fmt.Errorf("Unary client auth error: %v", err)
 		}
@@ -41,7 +42,7 @@ func StreamClientInterceptor(uid, role, sessionKey string) grpc.StreamClientInte
 		streamer grpc.Streamer,
 		opts ...grpc.CallOption,
 	) (grpc.ClientStream, error) {
-		md, err := GetAuthMD(uid, role, sessionKey)
+		md, err := getAppendedMD(ctx, uid, role, sessionKey)
 		if err != nil {
 			return nil, fmt.Errorf("Stream client auth error: %v", err)
 		}
@@ -49,4 +50,24 @@ func StreamClientInterceptor(uid, role, sessionKey string) grpc.StreamClientInte
 		newCtx := metadata.NewOutgoingContext(ctx, md)
 		return streamer(newCtx, desc, cc, method, opts...)
 	}
+}
+
+func getAppendedMD(ctx context.Context, uid, role, sessionKey string) (metadata.MD, error) {
+	requestMetadata, _ := metadata.FromIncomingContext(ctx)
+	metadataCopy := requestMetadata.Copy()
+
+	// If an authorization key and token are already set in the context, just
+	// go ahead
+	if len(requestMetadata[gateway.KeyAuthorization]) > 0 &&
+		len(requestMetadata[gateway.KeyUserCSRFToken]) > 0 {
+		return metadataCopy, nil
+	}
+
+	// Create new tokens for internal requests
+	authMD, err := GetAuthMD(uid, role, sessionKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return metadata.Join(metadataCopy, authMD), nil
 }
