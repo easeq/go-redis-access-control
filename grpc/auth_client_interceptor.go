@@ -53,7 +53,7 @@ func StreamClientInterceptor(uid, role, sessionKey string) grpc.StreamClientInte
 }
 
 func getAppendedMD(ctx context.Context, uid, role, sessionKey string) (metadata.MD, error) {
-	requestMetadata, _ := metadata.FromIncomingContext(ctx)
+	requestMetadata, _ := metadata.FromOutgoingContext(ctx)
 	metadataCopy := requestMetadata.Copy()
 
 	// If an authorization key and token are already set in the context, just
